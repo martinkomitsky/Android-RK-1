@@ -7,6 +7,7 @@ import android.content.IntentFilter;
 import android.support.v4.content.LocalBroadcastManager;
 import android.support.v7.app.ActionBarActivity;
 import android.os.Bundle;
+import android.system.ErrnoException;
 import android.util.Log;
 import android.view.View;
 import android.widget.TextView;
@@ -14,11 +15,9 @@ import android.widget.TextView;
 import ru.mail.weather.lib.City;
 import ru.mail.weather.lib.Weather;
 import ru.mail.weather.lib.WeatherStorage;
+import ru.mail.weather.lib.WeatherUtils;
 
 public class MainActivity extends ActionBarActivity {
-    public static final String WEATHER_ERROR_ACTION = "ru.bmstu.tp.WEATHER_ERROR_ACTION";
-    public static final String WEATHER_CHANGED_ACTION = "ru.bmstu.tp.WEATHER_CHANGED_ACTION";
-    public static final String WEATHER_LOAD_ACTION = "ru.bmstu.tp.WEATHER_LOAD_ACTION";
 
     private TextView cityName;
     private TextView temperature;
@@ -31,21 +30,17 @@ public class MainActivity extends ActionBarActivity {
         super.onCreate(savedInstanceState);
 
         Intent serviceIntent = new Intent(this, WeatherService.class);
-//        intent.setAction(WEATHER_LOAD_ACTION);
-        startService(serviceIntent);
         setContentView(R.layout.main_activity);
         getSupportActionBar().hide();
 
         weatherStorageInstance = WeatherStorage.getInstance(MainActivity.this);
-        selectedCity = weatherStorageInstance.getCurrentCity();
-        weatherStorageInstance.setCurrentCity(selectedCity);
 
         cityName = (TextView)this.findViewById(R.id.city_name);
         temperature = (TextView)this.findViewById(R.id.temperature);
         weatherDescription = (TextView)this.findViewById(R.id.weather_description);
 
-        IntentFilter intentFilter = new IntentFilter(WEATHER_LOAD_ACTION);
-        intentFilter.addAction(WEATHER_ERROR_ACTION);
+        IntentFilter intentFilter = new IntentFilter(WeatherService.WEATHER_LOAD_ACTION);
+        intentFilter.addAction(WeatherService.WEATHER_ERROR_ACTION);
         LocalBroadcastManager.getInstance(this).registerReceiver(broadcastReceiver, intentFilter);
     }
 
@@ -67,21 +62,45 @@ public class MainActivity extends ActionBarActivity {
         super.onStop();
     }
 
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        LocalBroadcastManager.getInstance(this).unregisterReceiver(broadcastReceiver);
+    }
+
     public void changeCity(View view){
         Intent ccIntent = new Intent(MainActivity.this, SecondActivity.class);
         MainActivity.this.startActivity(ccIntent);
     }
 
+    public void turnWeatherSilentUpdateOn(View view) {
+        Intent turnOnIntent = new Intent(MainActivity.this, WeatherService.class);
+        turnOnIntent.setAction(WeatherService.WEATHER_LOAD_ACTION);
+        WeatherUtils.getInstance().schedule(MainActivity.this, turnOnIntent);
+    }
+
+    public void turnWeatherSilentUpdateOff(View view) {
+        Intent turnOffIntent = new Intent(MainActivity.this, WeatherService.class);
+        turnOffIntent.setAction(WeatherService.WEATHER_LOAD_ACTION);
+        WeatherUtils.getInstance().unschedule(MainActivity.this, turnOffIntent);
+    }
+
     private BroadcastReceiver broadcastReceiver = new BroadcastReceiver() {
         public void onReceive(Context context, Intent intent) {
             switch (intent.getAction()){
-                case WEATHER_LOAD_ACTION:
+                case WeatherService.WEATHER_LOAD_ACTION:
                     Weather currentWeather = weatherStorageInstance.getLastSavedWeather(selectedCity);
-                    temperature.setText(String.valueOf(currentWeather.getTemperature()));
-                    weatherDescription.setText(currentWeather.getDescription());
-                    break;
+                    if (currentWeather != null) {
+                        temperature.setText(String.valueOf(currentWeather.getTemperature()));
+                        weatherDescription.setText(currentWeather.getDescription());
+                    } else {
+                        temperature.setText("0");
+                        weatherDescription.setText("An error ocurred");
 
-                case WEATHER_ERROR_ACTION:
+                    }
+
+            break;
+                case WeatherService.WEATHER_ERROR_ACTION:
                     temperature.setText("");
                     weatherDescription.setText("Update error");
                     break;
